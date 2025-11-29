@@ -1,0 +1,8 @@
+robot3d_env/
+robot3d_env/*
+tester_env/
+tester_env/*
+venv/
+*/venv/
+*/env/
+*env/
