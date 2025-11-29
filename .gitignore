@@ -1,8 +1,62 @@
-robot3d_env/
-robot3d_env/*
-tester_env/
-tester_env/*
+# -----------------------------------------
+# Python
+# -----------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+env/
 venv/
-*/venv/
-*/env/
-*env/
+*.venv/
+robot3d_env/
+tester_env/
+
+# VSCode / PyCharm settings
+.vscode/
+.idea/
+
+# -----------------------------------------
+# project assets (outputs, processed data)
+# -----------------------------------------
+# output depth maps
+assets/outputs/depth/
+assets/outputs/depth/*.png
+
+# output pointcloud
+assets/outputs/pointcloud/
+assets/outputs/pointcloud/*.ply
+
+# output mesh
+assets/outputs/mesh/
+assets/outputs/mesh/*.ply
+assets/outputs/mesh/*.obj
+assets/outputs/mesh/*.stl
+assets/outputs/mesh/*.gltf
+assets/outputs/mesh/*.glb
+
+# -----------------------------------------
+# block general image/video files
+# -----------------------------------------
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
+*.tiff
+*.tif
+*.webp
+*.mp4
+*.avi
+*.mov
+
+# But allow images in assets/images/ (input samples)
+!assets/images/
+!assets/images/*
+
+# -----------------------------------------
+# OS & editor junk
+# -----------------------------------------
+.DS_Store
+Thumbs.db
