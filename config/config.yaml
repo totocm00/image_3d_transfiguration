@@ -1,0 +1,18 @@
+paths:
+  # 기본 입력/출력 경로
+  input_image_dir: "assets/images"
+  output_root: "assets/outputs"
+  depth_dir: "depth"
+  pointcloud_dir: "pointcloud"
+
+output:
+  save_depth_png: true
+  depth_grayscale: true   # true면 그레이스케일, false면 컬러맵 적용도 가능
+  save_pointcloud: true
+  point_step: 2           # 픽셀 샘플링 간격
+  clip_min: 0.05          # depth 하한 (노이즈 제거용)
+  clip_max: 0.95          # depth 상한 (노이즈 제거용)
+
+model:
+  id: "LiheYoung/depth-anything-small-hf"
+  device: "auto"   # auto / cpu / cuda
