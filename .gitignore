@@ -29,7 +29,6 @@ assets/outputs/pointcloud/
 assets/outputs/pointcloud/*.ply
 
 # output mesh
-assets/outputs/mesh/
 assets/outputs/mesh/*.ply
 assets/outputs/mesh/*.obj
 assets/outputs/mesh/*.stl
@@ -50,10 +49,14 @@ assets/outputs/mesh/*.glb
 *.mp4
 *.avi
 *.mov
-
+assets/images/*
 # But allow images in assets/images/ (input samples)
 !assets/images/
-!assets/images/*
+!assets/images/.jpg
+!assets/images/.png
+!assets/images/.jpeg
+!assets/images/.gif
+
 
 # -----------------------------------------
 # OS & editor junk

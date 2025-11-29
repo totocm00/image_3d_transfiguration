@@ -1,22 +1,19 @@
-import sys
-import os
+#!/usr/bin/env python3
 import argparse
+import os
+import sys
 
-# src/ 디렉터리를 Python 경로에 추가해서
-# image_3d_transfiguration 패키지를 import 할 수 있게 만든다.
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+# src 경로 추가
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from image_3d_transfiguration.config_loader import load_config
-from image_3d_transfiguration.pipeline import run_image_3d
+from image_3d_transfiguration.logging_utils import setup_logging
+from image_3d_transfiguration.pipeline import run_full_pipeline
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--image_name",
-        type=str,
-        required=True,
-        help="assets/images 안에 있는 파일 이름 (예: robot.png)",
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="image_3d_transfiguration v2 - 이미지 → 3D 파이프라인 실행"
     )
     parser.add_argument(
         "--config",
@@ -24,23 +21,25 @@ def main():
         default="config/config.yaml",
         help="설정 파일 경로",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--image_name",
+        type=str,
+        required=True,
+        help="paths.image_dir 기준의 이미지 파일 이름 (예: robot.png)",
+    )
+    return parser.parse_args()
 
-    # 설정 파일 로드
+
+def main() -> None:
+    args = parse_args()
     cfg = load_config(args.config)
+    setup_logging(cfg.system.get("log_level", "INFO"))
 
-    # 입력 이미지 절대 경로 만들기
-    image_path = os.path.join(cfg.paths.input_image_dir, args.image_name)
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"입력 이미지가 없습니다: {image_path}")
+    results = run_full_pipeline(cfg, image_name=args.image_name)
 
-    # 2D → 3D 변환 실행
-    result = run_image_3d(image_path=image_path, cfg=cfg)
-
-    # 결과 경로 출력
-    print("=== Image 3D Transfiguration 결과 ===")
-    print(f"depth:       {result['depth_path']}")
-    print(f"point cloud: {result['point_cloud_path']}")
+    print("=== image_3d_transfiguration v2 결과 ===")
+    for k, v in results.items():
+        print(f"{k:10s}: {v}")
 
 
 if __name__ == "__main__":
