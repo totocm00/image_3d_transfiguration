@@ -1,0 +1,8 @@
+torchvision
+accelerate
+transformers
+huggingface-hub
+open3d
+numpy
+pillow
+pyyaml

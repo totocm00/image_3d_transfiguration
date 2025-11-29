@@ -31,6 +31,8 @@ Python 3.8 ~ 3.11 권장.
 ### 3) 가상환경 생성
 ```bash
 python3 -m venv robot3d_env
+
+ex_ $ python3.10 -m venv tester_env
 ```
 
 ### 4) 가상환경 활성화
@@ -44,11 +46,77 @@ Windows:
 robot3d_env\Scripts\activate
 ```
 
-### 5) 패키지 설치
+
+
+프로젝트 요구사항을 설치하기 전에,  
+**본인 PC의 CUDA 버전에 맞는 PyTorch를 먼저 설치해야 합니다.**
+
+### 5) 현재 PyTorch / CUDA 버전 확인
+아래 명령을 실행합니다:
+
+```bash
+python3 -c "import torch; print(torch.__version__); print(torch.version.cuda)"
+```
+
+예시 출력:
+
+```
+2.5.1+cu124
+12.4
+```
+
+의미:
+- `2.5.1+cu124` → PyTorch 2.5.1 + CUDA 12.4 빌드
+- `12.4` → CUDA 12.4 환경
+
+### 6) CUDA 버전에 맞는 PyTorch 설치
+
+본인 CUDA 버전에 맞는 명령어를 선택해 실행하세요:
+
+#### ✔ CUDA 12.4
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+#### ✔ CUDA 12.1
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+#### ✔ CUDA 11.8
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+```
+
+#### ✔ NVIDIA GPU가 없는 경우 (CPU-only)
+```bash
+pip install torch torchvision
+```
+
+#### ✔ macOS (M1/M2 포함) 설치 오류 발생 시
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+```
+
+
+### 7) 패키지 설치
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+설치되는 패키지 목록:
+- accelerate  
+- transformers  
+- huggingface-hub  
+- open3d  
+- numpy  
+- pillow  
+- pyyaml  
+
+⚠️ **torch는 requirements.txt 안에 포함되지 않습니다.**  
+CUDA 환경이 사용자마다 다르기 때문에 **각자 자신의 CUDA 버전에 맞게** 별도로 설치해야 합니다.
+
 
 ---
 
