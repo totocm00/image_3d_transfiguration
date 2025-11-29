@@ -1,0 +1,39 @@
+# ============================================================
+# image_3d_transfiguration v2 - FULL VERSION Requirements
+# 모든 기능 포함 (Depth, SAM, ZoeDepth, YOLO-Seg, Open3D, Viewer)
+# ============================================================
+
+# ----- Core -----
+numpy>=1.23
+opencv-python>=4.8.0
+pyyaml>=6.0
+tqdm>=4.66.0
+
+# ----- 3D -----
+open3d>=0.18.0
+trimesh>=4.4.0
+pygltflib>=1.16.0
+
+# ----- Torch (설치 시 CUDA 버전 맞춰야 함) -----
+torch
+torchvision
+
+# ----- DepthAnything -----
+transformers>=4.42.0
+accelerate>=0.30.0
+huggingface-hub>=0.23.0
+
+# ----- ZoeDepth -----
+git+https://github.com/isl-org/ZoeDepth.git
+
+# ----- SAM / YOLO-Seg (Optional Auto Mask) -----
+segment-anything>=1.0.0
+ultralytics>=8.0.200
+
+# ----- Optional UI / Dev Tools -----
+streamlit>=1.32.0
+matplotlib>=3.8.0
+
+# ----- Utils -----
+Pillow>=10.0.0
+scikit-image>=0.22.0

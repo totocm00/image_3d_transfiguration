@@ -2,9 +2,12 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
-# src 경로 추가
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+# 🔧 repo 루트 + src를 파이썬 경로에 추가
+ROOT = Path(__file__).resolve().parents[1]  # .../image_3d_transfiguration
+SRC = ROOT / "src"
+sys.path.append(str(SRC))
 
 from image_3d_transfiguration.config_loader import load_config
 from image_3d_transfiguration.logging_utils import setup_logging
