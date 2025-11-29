@@ -2,19 +2,19 @@
 **2D 이미지를 3D 포인트클라우드로 변환하는 경량 파이프라인**
 
 image_3d_transfiguration은 한 장의 2D 이미지를 입력받아  
-**Depth 추정 → 정규화 → 3D PointCloud 생성**까지 한 번에 처리하는  
+**Depth 추정 → 깊이 정규화 → 3D PointCloud 생성**까지 한 번에 처리하는  
 초경량 2D→3D 변환 모듈입니다.
 
 - 복잡한 kaolin/pytorch3d 설치 없음  
-- 단일 이미지만으로 간단히 3D 형태 추출  
-- 출력 파일들은 모두 `assets/outputs/` 아래에 자동 정리  
-- OVF(open_vision_factory) 프로젝트 백엔드로 쉽게 이식 가능
+- 단일 이미지로 간단히 3D 형태 추출  
+- 출력 파일은 모두 `assets/outputs/` 아래에서 자동 관리  
+- OVF(open_vision_factory) 백엔드로 쉽게 이식 가능  
 
 ---
 
-## 📦 1. 설치 및 환경 세팅
+# 📦 1. 설치 및 환경 세팅 (중요)
 
-리포를 클론한 뒤, 제공된 venv 세팅 스크립트를 실행하면 됩니다.
+image_3d_transfiguration은 **사용자의 Python 버전에 따라 직접 venv 생성**하는 방식을 권장합니다.
 
 ### 1) 리포 클론
 ```bash
@@ -22,44 +22,110 @@ git clone https://github.com/yourname/image_3d_transfiguration.git
 cd image_3d_transfiguration
 ```
 
-### 2) 가상환경 생성 + 패키지 설치
+### 2) Python 버전 확인
 ```bash
-bash setup_venv.sh
+python3 --version
+```
+Python 3.8 ~ 3.11 권장.
+
+### 3) 가상환경 생성
+```bash
+python3 -m venv robot3d_env
+```
+
+### 4) 가상환경 활성화
+Linux / macOS:
+```bash
 source robot3d_env/bin/activate
 ```
 
-### 3) 설치되는 주요 패키지
-- torch (이미 시스템에 설치된 버전 사용)
-- transformers (Depth Anything 로딩용)
-- accelerate
-- open3d
-- pillow / numpy
+Windows:
+```cmd
+robot3d_env\Scripts\activate
+```
+
+### 5) 패키지 설치
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
 ---
 
-## 🗂 2. 폴더 구조
+# ▶️ 2. 2D → 3D 변환 실행
+
+먼저 변환할 이미지를 아래 경로에 넣습니다:
+
+```
+assets/images/
+   └─ robot.png
+```
+
+실행:
+
+```bash
+python scripts/run_3d.py --image_name robot.png
+```
+
+성공 시 출력:
+
+```
+=== Image 3D Transfiguration 결과 ===
+depth:       assets/outputs/depth/robot_depth.png
+point cloud: assets/outputs/pointcloud/robot_pc.ply
+```
+
+---
+
+# 📁 3. 변환 결과 저장 위치
+
+모든 출력은 자동으로 아래에 정리됩니다:
+
+### ✔ Depth PNG  
+```
+assets/outputs/depth/robot_depth.png
+```
+
+### ✔ 3D PointCloud (.ply)  
+```
+assets/outputs/pointcloud/robot_pc.ply
+```
+
+---
+
+# 🧪 4. PointCloud 시각화 (Open3D)
+
+```bash
+python -c "import open3d as o3d; p=o3d.io.read_point_cloud('assets/outputs/pointcloud/robot_pc.ply'); o3d.visualization.draw_geometries([p])"
+```
+
+Open3D 뷰어가 열리고 3D 점 구름을 회전/확대하며 볼 수 있습니다.
+
+---
+
+# 🗂 5. 폴더 구조
 
 ```
 image_3d_transfiguration/
  ├─ assets/
- │   ├─ images/            # 입력 이미지 저장 위치
- │   └─ outputs/           # 변환 결과 저장 루트
- │        ├─ depth/        # depth PNG 저장
- │        └─ pointcloud/   # point cloud (PLY) 저장
+ │   ├─ images/             # 입력 이미지 저장 위치
+ │   └─ outputs/            # 변환 결과 저장 루트
+ │        ├─ depth/         # depth PNG 저장
+ │        └─ pointcloud/    # point cloud 저장
  ├─ config/
- │   └─ config.yaml        # 출력 설정, 모델 설정
+ │   └─ config.yaml         # 출력/모델 설정
  ├─ scripts/
- │   └─ run_3d.py          # 실행 스크립트(CLI)
+ │   └─ run_3d.py           # 실행용 CLI 스크립트
  └─ src/image_3d_transfiguration/
-      ├─ pipeline.py       # 핵심 Depth→3D 변환 로직
-      └─ config_loader.py  # YAML config 로더
+      ├─ pipeline.py        # 핵심 변환 로직
+      └─ config_loader.py   # YAML 설정 로더
 ```
 
 ---
 
-## ⚙️ 3. config.yaml에서 설정 가능한 항목
+# ⚙️ 6. config.yaml 설정 설명
 
-`config/config.yaml` 파일을 열어 변경할 수 있습니다.
+`config/config.yaml`을 통해 결과 저장 옵션 및 모델 설정을 변경할 수 있습니다.
 
 ```yaml
 paths:
@@ -81,92 +147,36 @@ model:
   device: "auto"   # auto / cpu / cuda
 ```
 
-### ✔ 주요 설정 설명
-- **depth_grayscale**: `true`면 깊이를 0~255 그레이스케일 PNG로 저장  
-- **point_step**: 포인트 샘플링 간격. 1이면 가장 촘촘  
-- **clip_min/max**: 너무 앞/뒤에 있는 이상한 depth 값 제거  
-- **device**: `"auto"` 추천 (GPU 있으면 cuda 자동 사용)
+### ✔ 주요 항목
+- **depth_grayscale**  
+  깊이를 0~255 그레이스케일로 저장할지 (true/false)
+- **point_step**  
+  포인트 샘플링 간격 (1 = 매우 촘촘, 2~4 = 적당)
+- **clip_min / clip_max**  
+  노이즈 제거를 위한 depth 값 제한
+- **device**  
+  `"auto"`: GPU 있으면 CUDA 자동 사용
 
 ---
 
-## 🖼 4. 변환할 이미지 넣기
+# 🧙 7. 활용 목적
 
-아래 경로에 이미지를 넣습니다:
-
-```
-assets/images/
-   └─ robot.png
-```
-
-이미지 이름은 무엇이든 상관없습니다.
+- 이미지 한 장으로 3D 윤곽을 빠르게 추출  
+- 로봇/비전/디지털트윈에서 **시각화용 3D 힌트** 생성  
+- OVF(open_vision_factory) 백엔드 플러그인으로 사용 가능  
+- 연구/학습용 Depth 기반 3D Reconstruction 템플릿
 
 ---
 
-## ▶️ 5. 실행 방법 (2D → 3D 변환)
+# 🏷️ 8. 출처 및 고지
 
-```bash
-python scripts/run_3d.py --image_name robot.png
-```
+image_3d_transfiguration은  
+**Open Vision Factory(OVF)에서 파생된 실험·연구용 2D→3D 모듈**이며,  
+기본 아이디어는 Meta AI의 **SAM-3D Objects** 프로젝트에서 영감을 얻었습니다.
 
-실행되면 콘솔에 다음처럼 출력됩니다:
-
-```
-=== Image 3D Transfiguration 결과 ===
-depth:       assets/outputs/depth/robot_depth.png
-point cloud: assets/outputs/pointcloud/robot_pc.ply
-```
-
----
-
-## 📁 6. 변환 결과 저장 위치
-
-모든 결과는 `assets/outputs/` 아래에 자동 생성됩니다.
-
-### ✔ Depth 이미지 (PNG)
-```
-assets/outputs/depth/robot_depth.png
-```
-
-### ✔ 3D PointCloud (PLY 파일)
-```
-assets/outputs/pointcloud/robot_pc.ply
-```
-
----
-
-## 🧪 7. PointCloud 열어보기 (Open3D)
-
-```bash
-python -c "import open3d as o3d; p=o3d.io.read_point_cloud('assets/outputs/pointcloud/robot_pc.ply'); o3d.visualization.draw_geometries([p])"
-```
-
-위 명령을 실행하면 **상호작용 가능한 3D 뷰어**가 뜹니다.
-
----
-
-## 🧙 8. 목적과 활용
-
-- 사진 한 장으로 3D 구조의 **대략적인 윤곽**을 얻을 때  
-- 로봇/공정/디지털트윈에서 **시각적 표시용 3D 힌트** 필요할 때  
-- OVF(open_vision_factory) 백엔드 확장 모듈로 사용  
-- 학습/연구용 2D→3D 변환 파이프라인으로 활용
-
----
-
-이 리포는 **압도적으로 가벼운 구성**으로  
-“이미지 → 3D 포인트클라우드” 흐름을 빠르게 시도해볼 수 있게 설계돼 있습니다.
-
----
-
-## 🏷️ 9. 출처 및 고지
-
-이 프로젝트 **image_3d_transfiguration**은  
-Open Vision Factory(OVF)에서 파생된 실험·연구용 모듈이며,  
-2D→3D 변환 아이디어는 Meta AI의 **SAM-3D Objects** 프로젝트에서 영감을 얻었습니다.
-
-본 리포는 SAM-3D의 실험 개념을 참고하되,  
-환경 설치 난이도와 의존성 문제를 줄이기 위해  
-Depth Anything 기반으로 재구성한 **경량화 구현 버전**입니다.
+본 리포는 SAM-3D의 개념 중  
+“단일 이미지 기반 3D 재구성” 요소만 경량화하여  
+Depth Anything 기반으로 재구성한 버전입니다.
 
 원천 프로젝트:  
 https://github.com/facebookresearch/sam-3d-objects
