@@ -1,211 +1,288 @@
+from __future__ import annotations
+
 import os
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
 import open3d as o3d
 
-from .config_loader import Config
+from .depth.sam3d_backend import Sam3DConfig, run_sam3d_pointmap
+from .config_loader import load_config
 from .logging_utils import get_logger
-from .mask import create_mask
-from .depth import (
-    DepthAnythingBackend,
-    ZoeDepthBackend,
-    FakeDepthBackend,
-    DepthBackend,
+from .depth.depth_anything_backend import DepthAnythingBackend
+from .depth.zoe_depth_backend import ZoeDepthBackend
+from .depth.postprocess import DepthPostprocessConfig, postprocess_depth
+from .pointcloud.generator import (
+    CameraConfig,
+    depth_to_pointcloud,
+    make_default_camera,
 )
-from .fusion import fuse_depth_maps
-from .pointcloud import depth_to_pointcloud, postprocess_pointcloud
-from .mesh import build_mesh_from_pointcloud, project_texture, export_mesh
+from .mesh.texture import project_texture
 
 logger = get_logger(__name__)
 
 
-def _build_depth_backend(name: str, device: str) -> DepthBackend:
-    name = name.lower()
-    if name == "depth_anything":
-        return DepthAnythingBackend(device=device)
-    if name == "zoe_depth":
-        return ZoeDepthBackend(device=device)
-    if name == "fake":
-        return FakeDepthBackend(device=device)
-    raise ValueError(f"알 수 없는 depth backend: {name}")
+@dataclass
+class DepthConfig:
+    backend_primary: str = "depth_anything"
+    backend_secondary: str = ""
+    fusion_alpha: float = 0.7  # primary 가중치
 
 
-def _resolve_device(device_cfg: str) -> str:
-    import torch  # torch가 없으면 여기서 ImportError 발생할 수 있음
+def _build_depth_backends(
+    depth_cfg: DepthConfig,
+    device: str = "auto",
+) -> Tuple[DepthAnythingBackend, Optional[ZoeDepthBackend]]:
+    primary = None
+    secondary = None
 
-    if device_cfg == "auto":
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    if device_cfg in ("cuda", "cpu"):
-        return device_cfg
-    return "cpu"
+    # ----- primary -----
+    if depth_cfg.backend_primary == "depth_anything":
+        primary = DepthAnythingBackend(device=device)
+    else:
+        raise ValueError(f"Unknown primary depth backend: {depth_cfg.backend_primary}")
+
+    # ----- secondary (옵션) -----
+    if depth_cfg.backend_secondary == "zoe_depth":
+        try:
+            secondary = ZoeDepthBackend(device=device)
+        except Exception as e:
+            logger.warning(
+                "ZoeDepth backend 생성 실패, primary 만 사용합니다: %s", e
+            )
+            secondary = None
+
+    return primary, secondary
 
 
-def run_full_pipeline(
-    cfg: Config,
+def _infer_depth(
+    image_bgr: np.ndarray,
+    depth_cfg: DepthConfig,
+    device: str = "auto",
+) -> np.ndarray:
+    """
+    DepthAnything (+ ZoeDepth 옵션)으로 깊이 추론하고,
+    필요시 두 결과를 가중합으로 fusion.
+    """
+    primary, secondary = _build_depth_backends(depth_cfg, device=device)
+
+    depth_primary = primary.predict(image_bgr)
+    primary.close()
+
+    if secondary is None:
+        depth = depth_primary
+    else:
+        depth_secondary = secondary.predict(image_bgr)
+        secondary.close()
+        a = float(depth_cfg.fusion_alpha)
+        depth = a * depth_primary + (1.0 - a) * depth_secondary
+
+    return depth
+
+
+def _save_depth_vis(
+    depth_norm: np.ndarray,
+    save_path: str,
+) -> None:
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    depth_img = (depth_norm * 255.0).clip(0, 255).astype("uint8")
+    depth_color = cv2.applyColorMap(depth_img, cv2.COLORMAP_MAGMA)
+    cv2.imwrite(save_path, depth_color)
+
+
+def _save_pointcloud(pc: o3d.geometry.PointCloud, save_path: str) -> None:
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    o3d.io.write_point_cloud(save_path, pc)
+
+
+def _save_mesh(mesh: o3d.geometry.TriangleMesh, save_path: str) -> None:
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    o3d.io.write_triangle_mesh(save_path, mesh)
+
+
+def run_3d_pipeline(
+    cfg_path: str,
     image_name: str,
-    external_mask: Optional[np.ndarray] = None,
-) -> Dict[str, str]:
+    device: str = "auto",
+) -> None:
     """
-    전체 파이프라인:
-      이미지 → 마스크 → depth → fusion → pointcloud → postprocess → mesh → export
-    결과 파일 경로들을 dict로 반환합니다.
+    image_3d_transfiguration 메인 파이프라인.
+
+    - backend_primary 가 "sam3d" 인 경우:
+        sam-3d 백엔드를 서브프로세스로 호출하여
+        곧바로 mesh .ply 를 생성하고 종료.
+
+    - 그 외("depth_anything", "zoe_depth"):
+        1) config 로드
+        2) 입력 이미지 로드
+        3) DepthAnything(+Zoe) 깊이 추론 + 후처리
+        4) point cloud 생성
+        5) Poisson mesh + smoothing
+        6) 카메라 기반 텍스처 projection
+        7) depth / cloud / mesh 저장
     """
-    # 경로 구성
-    paths_cfg = cfg.paths
-    out_cfg = cfg.output
-    mesh_cfg = cfg.mesh
-    texture_cfg = cfg.texture
-    depth_cfg = cfg.depth
-    fusion_cfg = cfg.fusion
-    input_cfg = cfg.input
+    cfg = load_config(cfg_path)
 
-    image_dir = paths_cfg.get("image_dir", "assets/images")
-    output_root = paths_cfg.get("output_root", "assets/outputs")
-    depth_dir = os.path.join(output_root, paths_cfg.get("depth_dir", "depth"))
-    pc_dir = os.path.join(output_root, paths_cfg.get("pointcloud_dir", "pointcloud"))
-    mesh_dir = os.path.join(output_root, paths_cfg.get("mesh_dir", "mesh"))
+    # --- paths / depth 섹션 파싱 (dict / dataclass 둘 다 지원) ---
+    if isinstance(cfg, dict):
+        paths_cfg = cfg.get("paths", {})
+        depth_section = cfg.get("depth", {})
+    else:
+        paths_cfg = getattr(cfg, "paths", {})
+        depth_section = getattr(cfg, "depth", {})
 
-    os.makedirs(depth_dir, exist_ok=True)
-    os.makedirs(pc_dir, exist_ok=True)
-    os.makedirs(mesh_dir, exist_ok=True)
+    # paths_cfg도 dict일 수도 있고, 객체일 수도 있음
+    if isinstance(paths_cfg, dict):
+        image_dir = paths_cfg.get(
+            "image_dir",
+            paths_cfg.get("input_root", "assets/images"),
+        )
+        output_root = paths_cfg.get("output_root", "assets/outputs")
+        depth_dir_name = paths_cfg.get("depth_dir", "depth")
+        pc_dir_name = paths_cfg.get("pointcloud_dir", "pointcloud")
+        mesh_dir_name = paths_cfg.get("mesh_dir", "mesh")
+    else:
+        image_dir = getattr(paths_cfg, "image_dir", "assets/images")
+        output_root = getattr(paths_cfg, "output_root", "assets/outputs")
+        depth_dir_name = getattr(paths_cfg, "depth_dir", "depth")
+        pc_dir_name = getattr(paths_cfg, "pointcloud_dir", "pointcloud")
+        mesh_dir_name = getattr(paths_cfg, "mesh_dir", "mesh")
 
-    image_path = os.path.join(image_dir, image_name)
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
+    img_path = os.path.join(image_dir, image_name)
+    if not os.path.isfile(img_path):
+        raise FileNotFoundError(img_path)
 
-    logger.info(f"입력 이미지: {image_path}")
-    image_bgr = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    logger.info("Input image: %s", img_path)
+
+    # ----- Depth 섹션 읽기 -----
+    if isinstance(depth_section, dict):
+        backend_primary = depth_section.get("backend_primary", "depth_anything")
+        backend_secondary = depth_section.get("backend_secondary", "")
+        fusion_alpha = float(depth_section.get("fusion_alpha", 0.7))
+
+        sam3d_root = depth_section.get(
+            "sam3d_root",
+            "/home/toto/parent/sam-3d-objects",
+        )
+        sam3d_python = depth_section.get("sam3d_python", "python")
+    else:
+        backend_primary = getattr(depth_section, "backend_primary", "depth_anything")
+        backend_secondary = getattr(depth_section, "backend_secondary", "")
+        fusion_alpha = float(getattr(depth_section, "fusion_alpha", 0.7))
+
+        sam3d_root = getattr(depth_section, "sam3d_root", "/home/toto/parent/sam-3d-objects")
+        sam3d_python = getattr(depth_section, "sam3d_python", "python")
+
+    # =========================================================
+    #  A) sam-3d 백엔드 모드: sam-3d에 직접 메쉬 생성을 맡긴다
+    # =========================================================
+    if backend_primary == "sam3d":
+        sam_cfg = Sam3DConfig(
+            sam3d_root=sam3d_root,
+            python_cmd=sam3d_python,
+        )
+
+        mesh_out_dir = os.path.join(output_root, mesh_dir_name)
+        os.makedirs(mesh_out_dir, exist_ok=True)
+        mesh_path = os.path.join(
+            mesh_out_dir,
+            f"{os.path.splitext(image_name)[0]}_mesh.ply",
+        )
+
+        logger.info(
+            "Running sam-3d backend: root=%s, python=%s",
+            sam_cfg.sam3d_root,
+            sam_cfg.python_cmd,
+        )
+        logger.info("sam-3d input image: %s", img_path)
+        logger.info("sam-3d output mesh: %s", mesh_path)
+
+        run_sam3d_pointmap(
+            cfg=sam_cfg,
+            input_path=os.path.abspath(img_path),
+            output_ply=os.path.abspath(mesh_path),
+        )
+
+        logger.info("sam-3d mesh saved: %s", mesh_path)
+        return
+
+    # =========================================================
+    #  B) 기존 DepthAnything / ZoeDepth 파이프라인
+    # =========================================================
+    image_bgr = cv2.imread(img_path, cv2.IMREAD_COLOR)
     if image_bgr is None:
-        raise RuntimeError(f"이미지를 읽을 수 없습니다: {image_path}")
+        raise RuntimeError(f"이미지 로드 실패: {img_path}")
 
     h, w = image_bgr.shape[:2]
 
-    # 마스크 생성
-    use_mask = bool(input_cfg.get("use_mask", False))
-    mask_mode = input_cfg.get("mask_mode", "full")
-    if use_mask:
-        mask = create_mask(image_bgr, mode=mask_mode, external_mask=external_mask)
-    else:
-        mask = np.ones((h, w), dtype=bool)
-
-    # depth backend 준비
-    device = _resolve_device(cfg.system.get("device", "auto"))
-    logger.info(f"Depth device: {device}")
-
-    primary_name = depth_cfg.get("backend_primary", "depth_anything")
-    secondary_name = depth_cfg.get("backend_secondary", "")
-
-    primary_backend = _build_depth_backend(primary_name, device=device)
-    secondary_backend = None
-    if secondary_name:
-        secondary_backend = _build_depth_backend(secondary_name, device=device)
-
-    # depth 예측
-    logger.info(f"Primary depth backend: {primary_name}")
-    depth_primary = primary_backend.predict(image_bgr)
-
-    depth_secondary = None
-    if secondary_backend is not None:
-        logger.info(f"Secondary depth backend: {secondary_name}")
-        depth_secondary = secondary_backend.predict(image_bgr)
-
-    # fusion
-    if fusion_cfg.get("enabled", False):
-        depth = fuse_depth_maps(
-            depth_primary,
-            depth_secondary,
-            method=fusion_cfg.get("method", "mean"),
-            primary_weight=float(fusion_cfg.get("primary_weight", 0.7)),
-        )
-    else:
-        depth = depth_primary
-
-    # depth 저장
-    results: Dict[str, str] = {}
-    if out_cfg.get("save_depth_png", True):
-        depth_png_path = os.path.join(
-            depth_dir, os.path.splitext(os.path.basename(image_name))[0] + "_depth.png"
-        )
-        _save_depth_as_png(
-            depth,
-            depth_png_path,
-            grayscale=out_cfg.get("depth_grayscale", True),
-        )
-        logger.info(f"Depth PNG 저장: {depth_png_path}")
-        results["depth"] = depth_png_path
-
-    # pointcloud 생성
-    pcd = depth_to_pointcloud(
-        depth=depth,
-        mask=mask,
-        point_step=int(out_cfg.get("point_step", 2)),
-        clip_min=float(out_cfg.get("clip_min", 0.05)),
-        clip_max=float(out_cfg.get("clip_max", 0.95)),
+    depth_cfg = DepthConfig(
+        backend_primary=backend_primary,
+        backend_secondary=backend_secondary,
+        fusion_alpha=fusion_alpha,
     )
 
-    # pointcloud 후처리
-    pp_cfg = out_cfg.get("postprocess", {})
-    pcd = postprocess_pointcloud(
-        pcd,
-        voxel_size=float(pp_cfg.get("voxel_size", 0.0)),
-        remove_statistical_outlier=bool(
-            pp_cfg.get("remove_statistical_outlier", True)
-        ),
-        nb_neighbors=int(pp_cfg.get("nb_neighbors", 20)),
-        std_ratio=float(pp_cfg.get("std_ratio", 2.0)),
+    logger.info(
+        "Depth backends: primary=%s, secondary=%s, fusion_alpha=%.2f",
+        depth_cfg.backend_primary,
+        depth_cfg.backend_secondary or "None",
+        depth_cfg.fusion_alpha,
     )
 
-    # pointcloud 저장
-    if out_cfg.get("save_pointcloud", True):
-        pc_path = os.path.join(
-            pc_dir, os.path.splitext(os.path.basename(image_name))[0] + "_pc.ply"
+    # ----- 1) Raw depth 추론 -----
+    depth_raw = _infer_depth(image_bgr, depth_cfg, device=device)
+
+    # ----- 2) Depth 후처리 (sam3d 느낌 smoothing) -----
+    pp_cfg = DepthPostprocessConfig()
+    depth_norm = postprocess_depth(depth_raw, cfg=pp_cfg)  # 0~1
+
+    # depth 시각화 저장
+    depth_out_dir = os.path.join(output_root, depth_dir_name)
+    depth_vis_path = os.path.join(
+        depth_out_dir, f"{os.path.splitext(image_name)[0]}_depth.png"
+    )
+    _save_depth_vis(depth_norm, depth_vis_path)
+    logger.info("Depth visualization saved: %s", depth_vis_path)
+
+    # ----- 3) Point cloud 생성 -----
+    cam_cfg: CameraConfig = make_default_camera(h, w, z_scale=1.0)
+    pc = depth_to_pointcloud(
+        depth_norm=depth_norm,
+        image_bgr=image_bgr,
+        cam=cam_cfg,
+    )
+
+    pc_out_dir = os.path.join(output_root, pc_dir_name)
+    pc_path = os.path.join(
+        pc_out_dir, f"{os.path.splitext(image_name)[0]}_cloud.ply"
+    )
+    _save_pointcloud(pc, pc_path)
+    logger.info("Point cloud saved: %s", pc_path)
+
+    # ----- 4) Mesh 생성 (Poisson + smoothing) -----
+    mesh_out_dir = os.path.join(output_root, mesh_dir_name)
+    mesh_path = os.path.join(
+        mesh_out_dir, f"{os.path.splitext(image_name)[0]}_mesh.ply"
+    )
+
+    if len(pc.points) == 0:
+        raise RuntimeError("Point cloud 가 비어 있습니다. depth 결과를 확인하세요.")
+
+    pc.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(
+            radius=0.05, max_nn=30
         )
-        o3d.io.write_point_cloud(pc_path, pcd)
-        logger.info(f"PointCloud 저장: {pc_path}")
-        results["pointcloud"] = pc_path
+    )
 
-    # mesh 생성/저장
-    if out_cfg.get("save_mesh", True):
-        mesh = build_mesh_from_pointcloud(
-            pcd,
-            method=mesh_cfg.get("method", "poisson"),
-            smoothing_iterations=int(mesh_cfg.get("smoothing_iterations", 5)),
-            target_reduction=float(mesh_cfg.get("target_reduction", 0.5)),
-        )
+    mesh, _ = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+        pc, depth=9
+    )
+    mesh = mesh.filter_smooth_taubin(number_of_iterations=10)
+    mesh.compute_vertex_normals()
 
-        if texture_cfg.get("enabled", True):
-            mesh = project_texture(
-                mesh,
-                image_bgr=image_bgr,
-                scale=float(texture_cfg.get("scale", 1.0)),
-            )
+    # ----- 5) Texture projection -----
+    mesh = project_texture(mesh, image_bgr=image_bgr, cam=cam_cfg)
 
-        base_name = os.path.splitext(os.path.basename(image_name))[0]
-        fmt = mesh_cfg.get("export_format", "ply").lower()
-        mesh_path = os.path.join(mesh_dir, f"{base_name}_mesh.{fmt}")
-        mesh_path = export_mesh(mesh, mesh_path, fmt=fmt)
-        logger.info(f"Mesh 저장: {mesh_path}")
-        results["mesh"] = mesh_path
-
-    return results
-
-
-def _save_depth_as_png(
-    depth: np.ndarray,
-    path: str,
-    grayscale: bool = True,
-) -> None:
-    """
-    depth map을 PNG로 저장합니다.
-    grayscale=True면 0~255 단일 채널로 저장.
-    """
-    d = depth.astype(np.float32)
-    d_min, d_max = float(d.min()), float(d.max())
-    d = (d - d_min) / (d_max - d_min + 1e-8)
-    d_255 = (d * 255.0).clip(0, 255).astype(np.uint8)
-    if not grayscale:
-        d_255 = cv2.applyColorMap(d_255, cv2.COLORMAP_JET)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    cv2.imwrite(path, d_255)
+    _save_mesh(mesh, mesh_path)
+    logger.info("Mesh saved: %s", mesh_path)

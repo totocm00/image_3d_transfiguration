@@ -1,12 +1,19 @@
+# src/image_3d_transfiguration/depth/base.py
+
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Optional
 
 import numpy as np
 
 
 class DepthBackend(ABC):
     """
-    Depth 예측용 백엔드 공통 인터페이스.
+    심도(Depth) 추론용 공통 백엔드 인터페이스.
+
+    - 입력: BGR uint8 이미지 (H, W, 3)
+    - 출력: float32 depth (H, W)  (상대/절대는 구현체에 따름)
     """
 
     def __init__(self, device: str = "auto") -> None:
@@ -15,15 +22,12 @@ class DepthBackend(ABC):
 
     @abstractmethod
     def _setup(self, device: str) -> None:
-        """
-        모델 로드/초기화 등 세팅 작업을 수행합니다.
-        """
         ...
 
     @abstractmethod
     def predict(self, image_bgr: np.ndarray) -> np.ndarray:
-        """
-        BGR 이미지(0~255 uint8)를 입력받아 depth map(float32)을 반환합니다.
-        반환 shape: (H, W), 값 범위: 任意 (후처리에서 정규화).
-        """
         ...
+
+    def close(self) -> None:
+        """필요하면 리소스 정리용으로 override."""
+        return

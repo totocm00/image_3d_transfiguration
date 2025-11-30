@@ -1,42 +1,57 @@
 # ============================================================
-# image_3d_transfiguration v2 - FULL VERSION Requirements
-# 모든 기능 포함 (Depth, SAM, YOLO-Seg, Open3D, Viewer)
+# image_3d_transfiguration v3 - FULL VERSION Requirements
+# Python 3.9 기준 / GPU(CUDA 11.8) Deep3D Stack 안정 조합
 # ============================================================
 
-# ----- Core -----
+# ---------------- Core ----------------
 numpy>=1.23
 opencv-python>=4.8.0
 pyyaml>=6.0
 tqdm>=4.66.0
+scikit-image>=0.22.0
 
-# ----- 3D -----
+# ---------------- 3D ------------------
 open3d>=0.18.0
 trimesh>=4.4.0
 pygltflib>=1.16.0
 
-# ----- Torch (설치 시 CUDA 버전 맞춰야 함) -----
-# 권장: requirements 설치 후 아래 명령으로 따로 설치
-# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-torch
-torchvision
+# ---------------- Torch ----------------
+# pip install → indices 없이 설치하면 CPU-only가 설치되므로
+# 반드시 아래 명령으로 CUDA 11.8 버전 설치:
+#   pip install torch==2.1.0+cu118 torchvision==0.16.0+cu118 torchaudio==2.1.0+cu118 \
+#       --extra-index-url https://download.pytorch.org/whl/cu118
 
-# ----- DepthAnything -----
-transformers>=4.42.0
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+
+# ---------------- pytorch3d ----------------
+# pip 명령 (Python 3.9 / Torch 2.1.0 / CUDA 11.8)
+#   pip install pytorch3d==0.7.4 \
+#       --extra-index-url https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/cu118
+
+pytorch3d==0.7.4
+
+# ---------------- Depth (HF) ----------------
+transformers>=4.38.0
 accelerate>=0.30.0
 huggingface-hub>=0.23.0
+Pillow>=10.0.0
 
-# ----- ZoeDepth (옵션, pip 설치 이슈 있을 수 있음) -----
-# git+https://github.com/isl-org/ZoeDepth.git
+# ---------------- Zoe/DepthAnything ----------------
+# ZoeDepth: 직접 clone 필요 (pip로 안됨)
+#   git clone https://github.com/isl-org/ZoeDepth.git
+#   pip install -e ZoeDepth
+#
+# DepthAnythingV2는 HF모델 기반으로 동작
 
-# ----- SAM / YOLO-Seg (Optional Auto Mask) -----
-# PyPI 'segment-anything' 패키지는 Meta SAM이 아님 → Git 버전 사용
-git+https://github.com/facebookresearch/segment-anything.git
+# ---------------- SAM / YOLO ----------------
+# Meta SAM은 git 설치 필요
+#   pip install git+https://github.com/facebookresearch/segment-anything.git
+#
 ultralytics>=8.0.200
 
-# ----- Optional UI / Dev Tools -----
-streamlit>=1.32.0
+# ---------------- Utils ---------------------
 matplotlib>=3.8.0
-
-# ----- Utils -----
-Pillow>=10.0.0
-scikit-image>=0.22.0
+loguru>=0.7.0
+streamlit>=1.32.0

@@ -7,36 +7,80 @@ from .base import DepthBackend
 
 class DepthAnythingBackend(DepthBackend):
     """
-    Depth Anything 기반 백엔드.
-    실제 사용 시에는 사용자가 모델 로딩 코드를 채워 넣어야 합니다.
-    (여기서는 구조만 제공하고, 핵심 부분은 TODO로 남겨둡니다.)
+    Hugging Face Transformers 기반 Depth Anything 백엔드.
+
+    - 모델: LiheYoung/depth-anything-small-hf (상대 깊이)
+    - 입력: BGR uint8 이미지 (OpenCV 형식)
+    - 출력: float32 depth (H, W), 원본 해상도에 맞춰 보간
     """
 
     def _setup(self, device: str) -> None:
-        self.device = device
-        # TODO:
-        # - torch / transformers / depth-anything 모델 로드
-        # - self.model = ...
-        # - device에 따라 to("cuda") 또는 to("cpu")
+        try:
+            import torch
+            from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+            import cv2  # noqa: F401
+            from PIL import Image  # noqa: F401
+        except ImportError as e:
+            raise RuntimeError(
+                "[DepthAnythingBackend] 필요한 패키지가 없습니다.\n"
+                "필수: torch, transformers, Pillow, opencv-python\n"
+                "예시) pip install torch torchvision torchaudio\n"
+                "     pip install transformers Pillow opencv-python"
+            ) from e
 
-        # 일단은 fake와 동일하게 동작하도록 해놓고,
-        # 모델을 연결하면 predict만 수정해도 전체 파이프라인이 그대로 사용 가능.
-        self._use_fake_fallback = True
+        self._torch = torch
+        self._AutoImageProcessor = AutoImageProcessor
+        self._AutoModelForDepthEstimation = AutoModelForDepthEstimation
+
+        # 디바이스 결정
+        if device == "auto":
+            if torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+        self.device = device
+
+        # 모델/프로세서 로드 (HF에서 자동 다운로드)
+        checkpoint = "LiheYoung/depth-anything-small-hf"
+        self.processor = AutoImageProcessor.from_pretrained(checkpoint)
+        self.model = AutoModelForDepthEstimation.from_pretrained(checkpoint)
+        self.model.to(self.device)
+        self.model.eval()
 
     def predict(self, image_bgr: np.ndarray) -> np.ndarray:
-        if getattr(self, "_use_fake_fallback", False):
-            # 임시: fake-like fallback
-            h, w = image_bgr.shape[:2]
-            x = np.linspace(0.1, 1.0, w, dtype=np.float32)
-            depth = np.tile(x, (h, 1))
-            return depth
+        """
+        BGR(0~255) 이미지를 받아 DepthAnything으로 깊이 추정.
+        반환: float32 np.ndarray, shape=(H, W)
+        """
+        import cv2
+        from PIL import Image
 
-        # 여기에 실제 DepthAnything inference 코드를 쓰면 됨.
-        # 예시 구조:
-        #   image_rgb = image_bgr[..., ::-1]
-        #   tensor = preprocess(image_rgb)
-        #   with torch.no_grad():
-        #       pred = self.model(tensor.to(self.device))
-        #   depth = postprocess(pred)
-        #   return depth
-        raise NotImplementedError("DepthAnything 모델 연결이 필요합니다.")
+        torch = self._torch
+
+        # OpenCV BGR → RGB PIL.Image
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(image_rgb)
+
+        # 전처리
+        inputs = self.processor(images=pil_image, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            predicted_depth = outputs.predicted_depth  # (B, H', W')
+
+        # 원본 해상도 크기로 보간
+        h, w = image_bgr.shape[:2]
+        prediction = torch.nn.functional.interpolate(
+            predicted_depth.unsqueeze(1),
+            size=(h, w),
+            mode="bicubic",
+            align_corners=False,
+        )
+        depth = prediction.squeeze().cpu().numpy().astype("float32")  # (H, W)
+
+        # 후처리: 음수나 NaN 방지
+        depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+        depth = np.maximum(depth, 0.0)
+
+        return depth
