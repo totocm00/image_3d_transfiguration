@@ -90,7 +90,7 @@ These are the basic requirements to run `image_3d_transfiguration`.
 ### ✅ Development (dev) environment
 
 ```bash
-bash scripts/setup_venv.sh dev
+source scripts/setup_venv.sh dev
 ```
 
 This will:
@@ -108,7 +108,7 @@ Example shell prompt after activation:
 ### ✅ Production (prod) environment
 
 ```bash
-bash scripts/setup_venv.sh prod
+source scripts/setup_venv.sh prod
 ```
 
 This will:
@@ -128,7 +128,7 @@ Example prompt:
 Since `venv_profile: prod` is set by default, running the script with no arguments uses the prod profile:
 
 ```bash
-bash scripts/setup_venv.sh
+source scripts/setup_venv.sh
 ```
 
 ---
@@ -137,12 +137,37 @@ bash scripts/setup_venv.sh
 
 ### 🔹 Option 1: WSL (Recommended)
 
-Install WSL (Ubuntu), then use the same commands as on Linux:
+- After installing WSL (Ubuntu)  
+  → Use the commands below
 
-```bash
-bash scripts/setup_venv.sh dev   # development
-bash scripts/setup_venv.sh prod  # production
+
+1)) Open PowerShell **as Administrator**
 ```
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+Then run:
+```powershell
+cd C:\path\to\image_3d_transfiguration
+
+# dev environment
+.\scripts\setup_venv.ps1 -Profile dev   # development
+
+# prod environment
+.\scripts\setup_venv.ps1 -Profile prod  # production
+```
+
+2)) Usage in CMD
+```cmd
+cd C:\path\to\image_3d_transfiguration
+
+REM dev profile
+scripts\setup_venv.cmd dev   # development
+
+REM prod profile
+scripts\setup_venv.cmd prod  # production
+```
+
 
 ### 🔹 Option 2: Manual venv creation in PowerShell
 

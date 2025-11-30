@@ -137,11 +137,33 @@ bash scripts/setup_venv.sh
 ### 🔹 방법 1: WSL (권장)
 
 - WSL(Ubuntu) 설치 후  
-  → Linux와 동일하게 아래 명령 사용:
+  → 아래 명령 사용
 
+
+1)) PowerShell에서 관리자 권한으로 열고
+```
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+그리고 실행
 ```bash
-bash scripts/setup_venv.sh dev   # 개발자용
-bash scripts/setup_venv.sh prod  # 배포용
+cd C:\path\to\image_3d_transfiguration
+
+# dev 환경
+.\scripts\setup_venv.ps1 -Profile dev # 개발자용
+
+# prod 환경
+.\scripts\setup_venv.ps1 -Profile prod # 배포용
+```
+
+2)) CMD에서 사용법
+```cmd
+cd C:\path\to\image_3d_transfiguration
+
+REM dev 프로필
+scripts\setup_venv.cmd dev # 개발자용
+
+REM prod 프로필
+scripts\setup_venv.cmd prod # 배포용
 ```
 
 ### 🔹 방법 2: PowerShell에서 수동으로 생성
