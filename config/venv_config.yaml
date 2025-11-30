@@ -1,0 +1,12 @@
+# 기본 프로필 (dev 또는 prod)
+venv_profile: dev
+
+# --- 개발용 프로필 (dev) ---
+venv_name_dev: tester
+venv_python_dev: python3.10
+venv_requirements_dev: requirements_full.txt
+
+# --- 배포용 프로필 (prod) ---
+venv_name_prod: image3d-prod
+venv_python_prod: python3.10
+venv_requirements_prod: requirements_prod.txt
