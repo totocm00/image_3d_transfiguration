@@ -12,7 +12,7 @@ venv/
 *.venv/
 robot3d_env/
 tester_env/
-
+tester/
 # VSCode / PyCharm settings
 .vscode/
 .idea/
@@ -63,3 +63,11 @@ assets/images/*
 # -----------------------------------------
 .DS_Store
 Thumbs.db
+
+
+# -----------------------------------------
+# Download file
+# -----------------------------------------
+
+yolov8n.pt
+assets/models/
