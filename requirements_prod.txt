@@ -1,0 +1,28 @@
+# ============================================================
+# image_3d_transfiguration v2 - PRODUCTION Requirements
+# 최소한의 3D 재구성 + Depth 처리 기능만 포함한 안정적 배포 버전
+# ============================================================
+
+# ----- Core -----
+numpy>=1.23
+opencv-python>=4.8.0
+pyyaml>=6.0
+tqdm>=4.66.0
+
+# ----- 3D -----
+open3d>=0.18.0
+trimesh>=4.4.0
+pygltflib>=1.16.0
+
+# ----- Torch (주의: CUDA 환경에 따라 별도 설치 권장) -----
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+torch
+torchvision
+
+# ----- DepthAnything (필수) -----
+transformers>=4.42.0
+accelerate>=0.30.0
+huggingface-hub>=0.23.0
+
+# ----- Utils -----
+Pillow>=10.0.0
