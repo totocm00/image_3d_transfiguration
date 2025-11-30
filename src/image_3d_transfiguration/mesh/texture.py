@@ -26,8 +26,13 @@ def project_texture(
     u = v_norm[:, 0]  # x
     v = 1.0 - v_norm[:, 1]  # y (위/아래 반전)
 
+    # (N, 2) 형태의 uv 배열
+    uv = np.stack([u, v], axis=-1)
+
+    # Open3D Vector3iVector → numpy 배열로 변환 후 인덱스로 사용
+    triangles = np.asarray(mesh.triangles)  # (T, 3) 정수 인덱스
     mesh.triangle_uvs = o3d.utility.Vector2dVector(
-        np.stack([u, v], axis=-1)[mesh.triangles.reshape(-1)]
+        uv[triangles.reshape(-1)]
     )
 
     # 텍스처 이미지를 저장하고 external tool에서 사용할 수 있도록 두는 방식 추천.
