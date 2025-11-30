@@ -1,6 +1,6 @@
 # ============================================================
 # image_3d_transfiguration v2 - FULL VERSION Requirements
-# 모든 기능 포함 (Depth, SAM, ZoeDepth, YOLO-Seg, Open3D, Viewer)
+# 모든 기능 포함 (Depth, SAM, YOLO-Seg, Open3D, Viewer)
 # ============================================================
 
 # ----- Core -----
@@ -15,6 +15,8 @@ trimesh>=4.4.0
 pygltflib>=1.16.0
 
 # ----- Torch (설치 시 CUDA 버전 맞춰야 함) -----
+# 권장: requirements 설치 후 아래 명령으로 따로 설치
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 torch
 torchvision
 
@@ -23,11 +25,12 @@ transformers>=4.42.0
 accelerate>=0.30.0
 huggingface-hub>=0.23.0
 
-# ----- ZoeDepth -----
-git+https://github.com/isl-org/ZoeDepth.git
+# ----- ZoeDepth (옵션, pip 설치 이슈 있을 수 있음) -----
+# git+https://github.com/isl-org/ZoeDepth.git
 
 # ----- SAM / YOLO-Seg (Optional Auto Mask) -----
-segment-anything>=1.0.0
+# PyPI 'segment-anything' 패키지는 Meta SAM이 아님 → Git 버전 사용
+git+https://github.com/facebookresearch/segment-anything.git
 ultralytics>=8.0.200
 
 # ----- Optional UI / Dev Tools -----
